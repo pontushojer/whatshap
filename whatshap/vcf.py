@@ -4,6 +4,7 @@ Functions for reading VCFs.
 import sys
 import logging
 import itertools
+from array import array
 from collections import defaultdict
 import vcf
 
@@ -49,6 +50,30 @@ class SampleNotFoundError(Exception):
 	pass
 
 
+class MiniRecord:
+	"""
+	A minimalistic VCF record.
+
+	We keep all VCF records for a single chromosome in memory. Keeping the
+	data within vcf._Record objects would be prohibitively expensive on VCFs
+	with many samples. MiniRecord objects use approximately 1% of the space of
+	vcf._Record objects.
+
+	gt1 and gt2 represent the GT fields of each sample. If GT is 2/3, then
+	gt1[i] == 2 and gt2[i] == 3 where i is the index of the sample.
+
+	type -- genotype: 2 if homozygous, 1 if heterozygous
+	"""
+	__slots__ = ('ALT', 'alleles', 'start', 'gt1', 'gt2', 'type')
+	def __init__(self, record):
+		self.ALT = [ str(s) for s in record.ALT ]
+		self.alleles = [record.REF] + self.ALT
+		self.start = record.start
+		self.gt1 = array('B', (int(call.gt_alleles[0]) for call in record.samples))
+		self.gt2 = array('B', (int(call.gt_alleles[1]) for call in record.samples))
+		self.type = array('B', (int(call.gt_alleles[1]) for call in record.samples))
+
+
 class VcfReader:
 	"""
 	Read a VCF file chromosome by chromosome.
@@ -84,7 +109,7 @@ class VcfReader:
 	def _group_by_chromosome(self):
 		"""
 		Yield (chromosome, records) tuples, where records is a list of the
-		VCF records on that chromosome.
+		VCF records (as MiniRecord objects) on that chromosome.
 		"""
 		records = []
 		prev_chromosome = None
@@ -94,7 +119,7 @@ class VcfReader:
 					yield (prev_chromosome, records)
 				prev_chromosome = record.CHROM
 				records = []
-			records.append(record)
+			records.append(MiniRecord(record))
 		if records:
 			yield (prev_chromosome, records)
 
