@@ -12,6 +12,7 @@ from whatshap.compare import run_compare
 from whatshap.vcf import VcfReader, VariantCallPhase
 
 trio_bamfile = 'tests/data/trio.pacbio.bam'
+dist_geno_bamfile = 'tests/data/test_dist_geno.bam'
 trio_merged_bamfile = 'tests/data/trio-merged-blocks.bam'
 trio_paired_end_bamfile = 'tests/data/paired_end.sorted.bam'
 recombination_breaks_bamfile = 'tests/data/recombination_breaks.sorted.bam'
@@ -589,3 +590,17 @@ def test_indel_phasing():
 		phase0 = VariantCallPhase(41, 0, None)
 		phase1 = VariantCallPhase(41, 1, None)
 		assert_phasing(table.phases_of('sample1'), [phase0, phase1, phase0, phase1])
+
+def test_distrust_genotypes():
+	with TemporaryDirectory() as tempdir:
+		outvcf = tempdir + '/output.vcf'
+		run_whatshap(phase_input_files=[dist_geno_bamfile], variant_file='tests/data/test_dist_geno.vcf', distrust_genotypes=False, output=outvcf)
+		assert os.path.isfile(outvcf)
+
+		tables = list(VcfReader(outvcf, phases=True))
+		assert len(tables) == 1
+		table = tables[0]
+		assert table.chromosome == 'chr1'
+		phase0 = VariantCallPhase(23824647, 0, None)
+		phase1 = VariantCallPhase(23824647, 1, None)
+		assert_phasing(table.phases_of('NA12878'), [phase0, phase0])
