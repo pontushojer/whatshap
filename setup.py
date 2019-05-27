@@ -12,12 +12,29 @@ from distutils.version import LooseVersion
 from distutils.command.sdist import sdist as _sdist
 from distutils.command.build_ext import build_ext as _build_ext
 from distutils.sysconfig import customize_compiler
+import distutils.util
 
 MIN_CYTHON_VERSION = "0.29"
 
 if sys.version_info < (3, 6):
     sys.stdout.write("At least Python 3.5 is required.\n")
     sys.exit(1)
+
+
+def is_new_macos():
+    """
+    Check whether we're on OSX >= 10.10
+
+    Based on https://github.com/huggingface/neuralcoref/blob/master/setup.py
+    """
+    name = distutils.util.get_platform()
+    if sys.platform != "darwin" or not name.startswith("macosx-10"):
+        return False
+    minor_version = int(name.split("-")[1].split(".")[1])
+    return minor_version >= 7
+
+
+IS_NEW_MACOS = is_new_macos()
 
 
 def no_cythonize(extensions, **_ignore):
@@ -140,7 +157,7 @@ class BuildExt(_build_ext):
         # Remove the warning about “-Wstrict-prototypes” not being valid for C++,
         # see http://stackoverflow.com/a/36293331/715090
         customize_compiler(self.compiler)
-        if self.compiler.compiler_so[0].endswith("clang"):
+        if self.compiler.compiler_so[0].endswith("clang") or IS_NEW_MACOS:
             # Clang needs this option in order to find the unordered_set header
             print("detected clang, using option -stdlib=libc++")
             self.compiler.compiler_so.append("-stdlib=libc++")
@@ -148,6 +165,12 @@ class BuildExt(_build_ext):
             self.compiler.compiler_so.remove("-Wstrict-prototypes")
         except (AttributeError, ValueError):
             pass
+        # Inspired by https://github.com/huggingface/neuralcoref/blob/master/setup.py
+        if IS_NEW_MACOS:
+            self.linker.linker_so.append("-lc++")
+            # g++ (used by unix compiler on mac) links to libstdc++ as a default lib.
+            # See: https://stackoverflow.com/questions/1653047/
+            self.linker.linker_so.append("-nodefaultlibs")
         super().build_extensions()
 
 
